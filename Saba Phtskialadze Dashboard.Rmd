@@ -1,0 +1,286 @@
+---
+title: "Flexdashboard Theming Demo"
+runtime: shiny
+output: 
+  flexdashboard::flex_dashboard:
+    theme: 
+      bootswatch: flatly
+    orientation: rows
+    social: menu
+    source_code: embed
+    navbar:
+      - { title: "Github", href: "https://github.com/SabaPhtskialadze/SB", align: right, icon: fa-github}
+      - { title: "LinkedIn", href: "https://shorturl.at/5yXV0", align: right, icon: fa-linkedin }
+---
+
+```{r, include=FALSE}
+library(flexdashboard)
+library(ggplot2)
+library(tidyverse)
+library(forecast)
+library(plotly)
+
+# Initialize thematic for R Markdown
+thematic::thematic_rmd(
+  font = "auto",
+  # To get the dark bg on the geom_raster()
+  sequential = thematic::sequential_gradient(fg_low = FALSE, fg_weight = 0, bg_weight = 1)
+)
+theme_set(theme_bw(base_size = 20))
+
+# Load sales data
+fsales <- "https://raw.githubusercontent.com/multidis/hult-inter-bus-reports-r/main/forecasting/sales_weekly.csv"
+sales <- read_csv(fsales)
+
+# latest (current) week
+nweek_now <- max(sales$Week)
+
+```
+
+
+Components
+===================================== 
+
+Sidebar {.sidebar}
+-------------------------------------
+
+```{r}
+selectInput("store_number", "Choose a store", choices = unique(sales$Store))
+```
+
+```{r}
+sliderInput("forecast_horizon", "Set forecast horizon (weeks)", value = 13, min = 1, max = 52)
+```
+
+
+Gauges {data-width=200}
+-------------------------------------
+
+### Accuracy
+
+```{r}
+output$accuracyGauge <- renderGauge({
+  sales_filtered <- sales %>%
+    filter(Store == input$store_number)
+
+  sales_hist <- sales_filtered %>%
+    subset(Week <= nweek_now - input$forecast_horizon)
+
+  sales_last <- sales_filtered %>%
+    subset(Week > nweek_now - input$forecast_horizon)
+
+  # time series with annual periodicity to account seasonality
+  sales_hist_ts <- ts(sales_hist$Weekly_Sales, frequency = 52)
+
+  # ARIMA: Auto-Regressive Integrated Moving Average
+  # methodological details:
+  #  https://otexts.com/fpp3/arima.html
+  arima_model <- auto.arima(sales_hist_ts, seasonal.test = "seas")
+
+  # forecast horizon to match user-selected value
+  arima_pred <- forecast(arima_model, h = input$forecast_horizon)
+
+  sales_pred_eval <- data.frame(predicted = as.numeric(arima_pred$mean),
+                                actual = sales_last$Weekly_Sales,
+                                Week = sales_last$Week)
+
+  accuracy <- mean(abs(sales_pred_eval$predicted - sales_pred_eval$actual) / sales_pred_eval$actual) * 100
+
+  gauge(
+    100 - accuracy, min = 0, max = 100, symbol = '%',
+    sectors = gaugeSectors(
+      danger = c(0, 60),
+      warning = c(60, 80),
+      success = c(80, 100)
+    )
+  )
+})
+
+gaugeOutput("accuracyGauge")
+```
+
+### Total Predicted
+
+```{r}
+output$totalPredictedGauge <- renderGauge({
+  sales_filtered <- sales %>%
+    filter(Store == input$store_number)
+
+  sales_hist <- sales_filtered %>%
+    subset(Week <= nweek_now - input$forecast_horizon)
+
+  sales_last <- sales_filtered %>%
+    subset(Week > nweek_now - input$forecast_horizon)
+
+  # time series with annual periodicity to account seasonality
+  sales_hist_ts <- ts(sales_hist$Weekly_Sales, frequency = 52)
+
+  # ARIMA: Auto-Regressive Integrated Moving Average
+  # methodological details:
+  #  https://otexts.com/fpp3/arima.html
+  arima_model <- auto.arima(sales_hist_ts, seasonal.test = "seas")
+
+  # forecast horizon to match user-selected value
+  arima_pred <- forecast(arima_model, h = input$forecast_horizon)
+
+  sales_pred_eval <- data.frame(predicted = as.numeric(arima_pred$mean),
+                                actual = sales_last$Weekly_Sales,
+                                Week = sales_last$Week)
+
+  total_predicted <- sum(sales_pred_eval$predicted)
+
+  gauge(
+    total_predicted, min = 0, max = max(total_predicted, sum(sales_pred_eval$actual)), symbol = '',
+    sectors = gaugeSectors(
+      success = c(0, max(total_predicted, sum(sales_pred_eval$actual)))
+    )
+  )
+})
+
+gaugeOutput("totalPredictedGauge")
+```
+
+### Total Actual
+
+```{r}
+output$totalActualGauge <- renderGauge({
+  sales_filtered <- sales %>%
+    filter(Store == input$store_number)
+
+  sales_hist <- sales_filtered %>%
+    subset(Week <= nweek_now - input$forecast_horizon)
+
+  sales_last <- sales_filtered %>%
+    subset(Week > nweek_now - input$forecast_horizon)
+
+  # time series with annual periodicity to account seasonality
+  sales_hist_ts <- ts(sales_hist$Weekly_Sales, frequency = 52)
+
+  # ARIMA: Auto-Regressive Integrated Moving Average
+  # methodological details:
+  #  https://otexts.com/fpp3/arima.html
+  arima_model <- auto.arima(sales_hist_ts, seasonal.test = "seas")
+
+  # forecast horizon to match user-selected value
+  arima_pred <- forecast(arima_model, h = input$forecast_horizon)
+
+  sales_pred_eval <- data.frame(predicted = as.numeric(arima_pred$mean),
+                                actual = sales_last$Weekly_Sales,
+                                Week = sales_last$Week)
+
+  total_actual <- sum(sales_pred_eval$actual)
+
+  gauge(
+    total_actual, min = 0, max = max(total_actual, sum(sales_pred_eval$predicted)), symbol = '',
+    sectors = gaugeSectors(
+      success = c(0, max(total_actual, sum(sales_pred_eval$predicted)))
+    )
+  )
+})
+
+gaugeOutput("totalActualGauge")
+```
+
+    
+3rd Party Outputs {.tabset}
+-------------------------------------
+
+### Plot
+    
+```{r}
+output$plot <- renderPlotly({
+  sales_filtered <- sales %>%
+    filter(Store == input$store_number)
+
+  sales_hist <- sales_filtered %>%
+    subset(Week <= nweek_now - input$forecast_horizon)
+
+  sales_last <- sales_filtered %>%
+    subset(Week > nweek_now - input$forecast_horizon)
+
+  # time series with annual periodicity to account seasonality
+  sales_hist_ts <- ts(sales_hist$Weekly_Sales, frequency = 52)
+
+  # ARIMA: Auto-Regressive Integrated Moving Average
+  # methodological details:
+  #  https://otexts.com/fpp3/arima.html
+  arima_model <- auto.arima(sales_hist_ts, seasonal.test = "seas")
+
+  # forecast horizon to match user-selected value
+  arima_pred <- forecast(arima_model, h = input$forecast_horizon)
+
+  sales_pred_eval <- data.frame(predicted = as.numeric(arima_pred$mean),
+                                actual = sales_last$Weekly_Sales,
+                                Week = sales_last$Week)
+
+  plot_ly(sales_pred_eval, x = ~Week) %>%
+    add_lines(y = ~predicted, name = 'Predicted', line = list(color = '#ED79F9')) %>%
+    add_lines(y = ~actual, name = 'Actual', line = list(color = '#4169E1')) %>%
+    layout(title = "Sales Prediction vs Actual",
+           xaxis = list(title = "Week"),
+           yaxis = list(title = "Sales"),
+           legend = list(x = 0.1, y = 0.9))
+})
+
+```
+
+
+```{r}
+plotlyOutput("plot")
+```
+
+
+### Next Quarter Forecast
+```{r}
+output$nextQuarterForecast <- renderPlotly({
+  sales_filtered <- sales %>%
+    filter(Store == input$store_number)
+
+  sales_hist <- sales_filtered %>%
+    subset(Week <= nweek_now - input$forecast_horizon)
+
+  sales_last <- sales_filtered %>%
+    subset(Week > nweek_now - input$forecast_horizon)
+
+  # time series with annual periodicity to account seasonality
+  sales_hist_ts <- ts(sales_hist$Weekly_Sales, frequency = 52)
+
+  # ARIMA: Auto-Regressive Integrated Moving Average
+  # methodological details:
+  #  https://otexts.com/fpp3/arima.html
+  arima_model <- auto.arima(sales_hist_ts, seasonal.test = "seas")
+
+  # forecast horizon to match user-selected value
+  arima_pred <- forecast(arima_model, h = input$forecast_horizon)
+
+  next_quarter_pred <- forecast(arima_model, h = 13)
+  next_quarter_pred_df <- data.frame(
+    Week = seq(nweek_now + 1, nweek_now + 13),
+    predicted = next_quarter_pred$mean,
+    lower = next_quarter_pred$lower[,2],
+    upper = next_quarter_pred$upper[,2]
+  )
+
+  # Combine historical data and forecast
+  historical_data <- sales_filtered %>%
+    tail(13) %>%
+    mutate(lower = NA, upper = NA, predicted = Weekly_Sales)
+
+  combined_df <- bind_rows(
+    historical_data %>% select(Week, predicted, lower, upper),
+    next_quarter_pred_df
+  )
+
+  plot_ly(combined_df, x = ~Week) %>%
+    add_lines(data = historical_data, x = ~Week, y = ~predicted, name = 'Historical', line = list(color = '#4169E1')) %>%
+    add_lines(data = next_quarter_pred_df, x = ~Week, y = ~predicted, name = 'Predicted', line = list(color = '#ED79F9')) %>%
+    add_ribbons(data = next_quarter_pred_df, x = ~Week, ymin = ~lower, ymax = ~upper, name = 'Confidence Interval', fillcolor = 'rgba(237,121,249,0.2)', line = list(color = 'rgba(237,121,249,0.2)')) %>%
+    layout(title = "Next Quarter Forecast with Confidence Intervals",
+           xaxis = list(title = "Week"),
+           yaxis = list(title = "Sales"),
+           legend = list(x = 0.1, y = 0.9))
+})
+
+plotlyOutput("nextQuarterForecast")
+```
+
